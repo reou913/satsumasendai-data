@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数字で見る薩摩川内</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f6f4ef;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --s1: #2a78d6;  /* 青 */
+    --s2: #eb6834;  /* オレンジ */
+    --s3: #1baf7a;  /* アクア */
+    --up: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #f0efec;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --up: #0ca30c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 56px; }
+
+  header { margin-bottom: 28px; }
+  .eyebrow { font-size: .8rem; letter-spacing: .2em; color: var(--muted); margin: 0; }
+  h1 { font-size: clamp(1.8rem, 6vw, 2.6rem); margin: 4px 0 8px; letter-spacing: .02em; }
+  .lead { color: var(--ink-2); margin: 0; max-width: 40em; }
+
+  /* 数字タイル */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 28px 0 40px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 18px 20px;
+  }
+  .tile .label { font-size: .85rem; color: var(--ink-2); }
+  .tile .value { font-size: 2.2rem; font-weight: 700; line-height: 1.2; margin: 4px 0; }
+  .tile .value small { font-size: 1rem; font-weight: 600; margin-left: 2px; }
+  .tile .note { font-size: .78rem; color: var(--muted); }
+  .tile .delta { color: var(--up); font-weight: 600; }
+
+  /* セクション */
+  section { margin-bottom: 40px; }
+  h2 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: var(--ink-2); font-size: .9rem; margin: 0 0 16px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 18px 20px 14px;
+  }
+  .card h3 { font-size: 1rem; margin: 0 0 2px; }
+  .card .unit { font-size: .78rem; color: var(--muted); margin: 0 0 10px; }
+  .chart-box { position: relative; height: 280px; }
+  .chart-box.short { height: 220px; }
+  .source { font-size: .75rem; color: var(--muted); margin: 10px 0 0; }
+
+  /* 表で見る */
+  details { margin-top: 8px; font-size: .85rem; }
+  summary { cursor: pointer; color: var(--accent); }
+  .table-scroll { overflow-x: auto; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-2); font-weight: 600; }
+
+  .error {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; color: var(--ink-2);
+  }
+  footer { font-size: .78rem; color: var(--muted); border-top: 1px solid var(--grid); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">SATSUMASENDAI IN NUMBERS</p>
+    <h1>数字で見る薩摩川内</h1>
+    <p class="lead">鹿児島県薩摩川内市の人口と、川内港の輸出入を公的統計からまとめました。グラフにカーソルを合わせると数値が表示されます。</p>
+  </header>
+
+  <div id="app">
+    <p class="sub">データを読み込み中…</p>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  // ===== 便利関数 =====
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const num = n => n.toLocaleString("ja-JP");
+  const oku = sen => sen / 100000;                 // 千円 → 億円
+  const okuText = sen => oku(sen).toFixed(1);       // 例：238.7
+
+  // 表を作る
+  function tableHTML(head, rows) {
+    return `<details><summary>表で見る</summary><div class="table-scroll"><table>
+      <thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div></details>`;
+  }
+
+  // Chart.js の共通の見た目
+  function baseOptions(extra = {}) {
+    return Object.assign({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: css("--ink"), titleColor: css("--surface"), bodyColor: css("--surface"), padding: 10, cornerRadius: 8 }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--muted") } },
+        y: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted") } }
+      }
+    }, extra);
+  }
+
+  let charts = [];
+
+  // ===== 画面を組み立てる =====
+  function render(d) {
+    const p = d.population, t = d.trade;
+    const last = t.years.length - 1;
+    const prev = last - 1;
+    const pct = (a, b) => ((a / b - 1) * 100).toFixed(1);
+    const isPre = y => t.preliminaryYears.includes(y);
+    const yLabel = y => isPre(y) ? `${y}（速報）` : `${y}`;
+    const peakIdx = p.census.population.indexOf(Math.max(...p.census.population));
+
+    document.getElementById("app").innerHTML = `
+      <div class="tiles">
+        <div class="tile">
+          <div class="label">人口（住民基本台帳）</div>
+          <div class="value">${num(p.current.population)}<small>人</small></div>
+          <div class="note">${p.current.date.replace(/-/g, "/")} 時点・${num(p.current.households)}世帯</div>
+        </div>
+        <div class="tile">
+          <div class="label">国勢調査のピーク</div>
+          <div class="value">${num(p.census.population[peakIdx])}<small>人</small></div>
+          <div class="note">${p.census.years[peakIdx]}年。2020年は${num(p.census.population.at(-1))}人</div>
+        </div>
+        <div class="tile">
+          <div class="label">川内港の輸出（${yLabel(t.years[last])}）</div>
+          <div class="value">${okuText(t.exports[last])}<small>億円</small></div>
+          <div class="note"><span class="delta">前年比 +${pct(t.exports[last], t.exports[prev])}%</span>・${t.years[0]}年の約${Math.round(t.exports[last] / t.exports[0])}倍</div>
+        </div>
+        <div class="tile">
+          <div class="label">川内港の輸入（${yLabel(t.years[last])}）</div>
+          <div class="value">${okuText(t.imports[last])}<small>億円</small></div>
+          <div class="note">前年比 ${pct(t.imports[last], t.imports[prev]) >= 0 ? "+" : ""}${pct(t.imports[last], t.imports[prev])}%</div>
+        </div>
+      </div>
+
+      <section>
+        <h2>人口</h2>
+        <p class="sub">1985年をピークに減少が続き、65歳以上の割合が3割を超えました。</p>
+        <div class="card" style="margin-bottom:16px">
+          <h3>人口の推移</h3>
+          <p class="unit">単位：人</p>
+          <div class="chart-box"><canvas id="popChart" aria-label="人口の推移の折れ線グラフ" role="img"></canvas></div>
+          ${tableHTML(["年", "人口（人）", "世帯数"], p.census.years.map((y, i) => [y, num(p.census.population[i]), num(p.census.households[i])]))}
+          <p class="source">出典：${p.census.source}</p>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h3>年齢3区分の割合</h3>
+            <p class="unit">単位：%</p>
+            <div class="chart-box short"><canvas id="ageChart" aria-label="年齢3区分の割合の積み上げ横棒グラフ" role="img"></canvas></div>
+            ${tableHTML(["年", ...Object.keys(p.age.groups)], p.age.years.map((y, i) => [y, ...Object.values(p.age.groups).map(v => v[i])]))}
+            <p class="source">出典：${p.age.source}</p>
+          </div>
+          <div class="card">
+            <h3>産業別の就業人口の割合</h3>
+            <p class="unit">単位：%</p>
+            <div class="chart-box short"><canvas id="indChart" aria-label="産業別就業人口割合の積み上げ横棒グラフ" role="img"></canvas></div>
+            ${tableHTML(["年", ...Object.keys(p.industry.groups)], p.industry.years.map((y, i) => [y, ...Object.values(p.industry.groups).map(v => v[i])]))}
+            <p class="source">出典：${p.industry.source}</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>川内港の輸出入</h2>
+        <p class="sub">輸出は2022年以降に急増し、輸入との差が縮まっています。</p>
+        <div class="card">
+          <h3>輸出額・輸入額の推移</h3>
+          <p class="unit">単位：億円${t.preliminaryYears.length ? `（${t.preliminaryYears.join("・")}年は速報値）` : ""}</p>
+          <div class="chart-box"><canvas id="tradeChart" aria-label="川内港の輸出額と輸入額の棒グラフ" role="img"></canvas></div>
+          ${tableHTML(["年", "輸出（億円）", "輸入（億円）"], t.years.map((y, i) => [yLabel(y), okuText(t.exports[i]), okuText(t.imports[i])]))}
+          <p class="source">出典：${t.source}</p>
+        </div>
+      </section>`;
+
+    document.getElementById("footer").textContent =
+      `データ更新日：${d.updated}　｜　出典：総務省 国勢調査、薩摩川内市、長崎税関`;
+
+    drawCharts(d);
+  }
+
+  // ===== グラフを描く =====
+  function drawCharts(d) {
+    charts.forEach(c => c.destroy());
+    charts = [];
+    const p = d.population, t = d.trade;
+    const colors = [css("--s1"), css("--s2"), css("--s3")];
+    const surface = css("--surface");
+
+    // 人口の推移（折れ線）
+    charts.push(new Chart(document.getElementById("popChart"), {
+      type: "line",
+      data: {
+        labels: p.census.years,
+        datasets: [{
+          label: "人口", data: p.census.population,
+          borderColor: colors[0], backgroundColor: colors[0],
+          borderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+          pointBorderColor: surface, pointBorderWidth: 2, tension: 0.25
+        }]
+      },
+      options: baseOptions({
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 8,
+            callbacks: {
+              title: items => `${items[0].label}年`,
+              label: item => `人口 ${num(item.raw)}人`,
+              afterLabel: item => `世帯数 ${num(p.census.households[item.dataIndex])}世帯`
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--muted") } },
+          y: { suggestedMin: 80000, grid: { color: css("--grid") }, border: { display: false },
+               ticks: { color: css("--muted"), callback: v => num(v) } }
+        }
+      })
+    }));
+
+    // 割合の積み上げ横棒（年齢・産業で共通）
+    function stacked(id, block) {
+      const names = Object.keys(block.groups);
+      return new Chart(document.getElementById(id), {
+        type: "bar",
+        data: {
+          labels: block.years.map(String),
+          datasets: names.map((n, i) => ({
+            label: n, data: block.groups[n],
+            backgroundColor: colors[i], borderColor: surface, borderWidth: 2,
+            borderRadius: 4, borderSkipped: false, barThickness: 22
+          }))
+        },
+        options: baseOptions({
+          indexAxis: "y",
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: true, position: "top", align: "start",
+                      labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 3 } },
+            tooltip: { backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 8,
+                       callbacks: { title: items => `${items[0].label}年`, label: item => `${item.dataset.label} ${item.raw}%` } }
+          },
+          scales: {
+            x: { stacked: true, max: 100, grid: { color: css("--grid") }, border: { display: false },
+                 ticks: { color: css("--muted"), callback: v => v + "%" } },
+            y: { stacked: true, grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--ink-2") } }
+          }
+        })
+      });
+    }
+    charts.push(stacked("ageChart", p.age));
+    charts.push(stacked("indChart", p.industry));
+
+    // 川内港の輸出入（棒）
+    const labels = t.years.map(y => t.preliminaryYears.includes(y) ? `${y}*` : `${y}`);
+    charts.push(new Chart(document.getElementById("tradeChart"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "輸出", data: t.exports.map(oku), backgroundColor: colors[0], borderRadius: 4, borderSkipped: "bottom", maxBarThickness: 18 },
+          { label: "輸入", data: t.imports.map(oku), backgroundColor: colors[1], borderRadius: 4, borderSkipped: "bottom", maxBarThickness: 18 }
+        ]
+      },
+      options: baseOptions({
+        datasets: { bar: { categoryPercentage: 0.7, barPercentage: 0.9 } },
+        plugins: {
+          legend: { display: true, position: "top", align: "start",
+                    labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 3 } },
+          tooltip: { backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 8,
+                     callbacks: {
+                       title: items => items[0].label.endsWith("*") ? `${items[0].label.slice(0, -1)}年（速報値）` : `${items[0].label}年`,
+                       label: item => `${item.dataset.label} ${item.raw.toFixed(1)}億円`
+                     } }
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true } },
+          y: { beginAtZero: true, grid: { color: css("--grid") }, border: { display: false },
+               ticks: { color: css("--muted"), callback: v => v + "億" } }
+        }
+      })
+    }));
+  }
+
+  // ===== data.json を読み込む =====
+  let data = null;
+  fetch("data.json", { cache: "no-store" })
+    .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+    .then(d => { data = d; render(d); })
+    .catch(() => {
+      document.getElementById("app").innerHTML = `
+        <div class="error">
+          <strong>データを読み込めませんでした。</strong><br>
+          index.html をパソコンで直接開いた場合、ブラウザの安全機能で data.json が読み込めません。
+          GitHub Pages に index.html と data.json の2つをアップロードしてから確認してください。
+        </div>`;
+    });
+
+  // ダークモードの切り替えに合わせてグラフの色を描き直す
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (data) drawCharts(data); });
+</script>
+</body>
+</html>

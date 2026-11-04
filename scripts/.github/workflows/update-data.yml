@@ -1,0 +1,40 @@
+# e-Stat から人口動態を取得して data.json を更新する
+# 毎月1日の朝9時台（日本時間）に自動実行。Actionsタブから手動実行もできます。
+name: e-Statデータ更新
+
+on:
+  schedule:
+    - cron: "17 0 1 * *"   # UTC 0:17 = 日本時間 9:17
+  workflow_dispatch:        # 「Run workflow」ボタンで手動実行
+
+permissions:
+  contents: write           # data.json をリポジトリに保存するため
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js を準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: e-Stat からデータ取得
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+        run: node scripts/fetch-estat.mjs
+
+      - name: 変更があれば保存（コミット）
+        run: |
+          if git diff --quiet data.json; then
+            echo "変更なし"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git commit -m "e-Statデータを自動更新"
+          git push

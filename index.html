@@ -148,6 +148,68 @@
 
   let charts = [];
 
+  // ===== 人口動態（e-Stat から自動取得した部分） =====
+  function dynamicsHTML(dy) {
+    if (!dy) {
+      return `<div class="card" style="margin-top:16px">
+        <h3>人口動態（出生・死亡・転入・転出）</h3>
+        <p class="sub" style="margin:4px 0 0">e-Stat からの自動取得を準備中です。</p>
+      </div>`;
+    }
+    const i = dy.years.length - 1;
+    const natural = dy.births[i] - dy.deaths[i];
+    const social = dy.moveIn[i] - dy.moveOut[i];
+    const sign = n => (n >= 0 ? "+" : "−") + num(Math.abs(n));
+    return `
+      <h3 style="margin:28px 0 4px;font-size:1.1rem">人口動態</h3>
+      <p class="sub">${dy.years[i]}年は、出生−死亡が <strong>${sign(natural)}人</strong>、転入−転出が <strong>${sign(social)}人</strong>でした。</p>
+      <div class="grid2">
+        <div class="card">
+          <h3>出生数と死亡数</h3>
+          <p class="unit">単位：人</p>
+          <div class="chart-box short"><canvas id="natChart" aria-label="出生数と死亡数の棒グラフ" role="img"></canvas></div>
+          ${tableHTML(["年", "出生", "死亡", "差"], dy.years.map((y, k) => [y, num(dy.births[k]), num(dy.deaths[k]), sign(dy.births[k] - dy.deaths[k])]))}
+          <p class="source">出典：${dy.source}</p>
+        </div>
+        <div class="card">
+          <h3>転入者数と転出者数</h3>
+          <p class="unit">単位：人</p>
+          <div class="chart-box short"><canvas id="socChart" aria-label="転入者数と転出者数の棒グラフ" role="img"></canvas></div>
+          ${tableHTML(["年", "転入", "転出", "差"], dy.years.map((y, k) => [y, num(dy.moveIn[k]), num(dy.moveOut[k]), sign(dy.moveIn[k] - dy.moveOut[k])]))}
+          <p class="source">出典：${dy.source}</p>
+        </div>
+      </div>`;
+  }
+
+  // 2系列の棒グラフ（人口動態・貿易で共通）
+  function pairBars(id, labels, a, b, unitLabel, fmt) {
+    const surface = css("--surface");
+    return new Chart(document.getElementById(id), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: a.label, data: a.data, backgroundColor: css("--s1"), borderRadius: 4, borderSkipped: "bottom", maxBarThickness: 18 },
+          { label: b.label, data: b.data, backgroundColor: css("--s2"), borderRadius: 4, borderSkipped: "bottom", maxBarThickness: 18 }
+        ]
+      },
+      options: baseOptions({
+        datasets: { bar: { categoryPercentage: 0.7, barPercentage: 0.9 } },
+        plugins: {
+          legend: { display: true, position: "top", align: "start",
+                    labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 3 } },
+          tooltip: { backgroundColor: css("--ink"), titleColor: surface, bodyColor: surface, padding: 10, cornerRadius: 8,
+                     callbacks: { title: items => `${items[0].label}年`, label: item => `${item.dataset.label} ${fmt(item.raw)}${unitLabel}` } }
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true } },
+          y: { beginAtZero: true, grid: { color: css("--grid") }, border: { display: false },
+               ticks: { color: css("--muted"), callback: v => num(v) } }
+        }
+      })
+    });
+  }
+
   // ===== 画面を組み立てる =====
   function render(d) {
     const p = d.population, t = d.trade;
@@ -208,6 +270,7 @@
             <p class="source">出典：${p.industry.source}</p>
           </div>
         </div>
+        ${dynamicsHTML(p.dynamics)}
       </section>
 
       <section>
@@ -300,6 +363,13 @@
     }
     charts.push(stacked("ageChart", p.age));
     charts.push(stacked("indChart", p.industry));
+
+    // 人口動態（データがあるときだけ）
+    if (p.dynamics) {
+      const dy = p.dynamics, yl = dy.years.map(String);
+      charts.push(pairBars("natChart", yl, { label: "出生", data: dy.births }, { label: "死亡", data: dy.deaths }, "人", num));
+      charts.push(pairBars("socChart", yl, { label: "転入", data: dy.moveIn }, { label: "転出", data: dy.moveOut }, "人", num));
+    }
 
     // 川内港の輸出入（棒）
     const labels = t.years.map(y => t.preliminaryYears.includes(y) ? `${y}*` : `${y}`);
